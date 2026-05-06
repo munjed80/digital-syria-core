@@ -2,6 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&display=swap');
+
 :root {
   color-scheme: light;
+}
+
+html,
+body {
+  font-family: 'Cairo', 'Tajawal', system-ui, sans-serif;
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-md bg-gov px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-gov-dark focus:outline-none focus:ring-2 focus:ring-gov focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .form-input {
+    @apply mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm placeholder:text-slate-400 focus:border-gov focus:outline-none focus:ring-1 focus:ring-gov;
+  }
+  .form-label {
+    @apply block text-sm font-medium text-slate-700;
+  }
+  .card {
+    @apply rounded-lg border border-slate-200 bg-white p-6 shadow-sm;
+  }
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
 }

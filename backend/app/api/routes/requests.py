@@ -10,7 +10,15 @@ from app.models.notification import Notification
 from app.models.request import InternalNote, RequestStatus, RequestStatusHistory, ServiceRequest
 from app.models.service import ServiceCatalogItem
 from app.models.user import User, UserRole
-from app.schemas.request import InternalNoteCreate, RequestCreate, RequestStatusUpdate, ServiceRequestPublic
+from app.schemas.request import (
+    InternalNoteCreate,
+    InternalNotePublic,
+    RequestCreate,
+    RequestStatusUpdate,
+    ServiceRequestDetail,
+    ServiceRequestPublic,
+    StatusHistoryPublic,
+)
 from app.services.audit import write_audit_log
 
 router = APIRouter(prefix="/requests", tags=["requests"])
@@ -66,6 +74,49 @@ def list_requests(
     if current_user.role == UserRole.citizen:
         query = query.where(ServiceRequest.citizen_id == current_user.id)
     return list(db.scalars(query.order_by(ServiceRequest.id.desc())))
+
+
+@router.get("/{request_id}", response_model=ServiceRequestDetail)
+def get_request(
+    request_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ServiceRequestDetail:
+    request_record = db.scalar(select(ServiceRequest).where(ServiceRequest.id == request_id))
+    if request_record is None:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    # Citizens may only access their own requests.
+    if current_user.role == UserRole.citizen and request_record.citizen_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    history_rows = list(
+        db.scalars(
+            select(RequestStatusHistory)
+            .where(RequestStatusHistory.request_id == request_id)
+            .order_by(RequestStatusHistory.id.asc())
+        )
+    )
+    status_history = [StatusHistoryPublic.model_validate(row) for row in history_rows]
+
+    # Internal notes are not exposed to citizens (privacy of internal review).
+    internal_notes: list[InternalNotePublic] = []
+    if current_user.role != UserRole.citizen:
+        note_rows = list(
+            db.scalars(
+                select(InternalNote)
+                .where(InternalNote.request_id == request_id)
+                .order_by(InternalNote.id.asc())
+            )
+        )
+        internal_notes = [InternalNotePublic.model_validate(row) for row in note_rows]
+
+    base = ServiceRequestPublic.model_validate(request_record).model_dump()
+    return ServiceRequestDetail(
+        **base,
+        status_history=status_history,
+        internal_notes=internal_notes,
+    )
 
 
 @router.patch("/{request_id}/status", response_model=ServiceRequestPublic)
