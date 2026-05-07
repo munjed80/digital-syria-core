@@ -4,10 +4,17 @@ import { ReactNode } from 'react';
 
 import Navbar from './Navbar';
 import ProtectedRoute from './ProtectedRoute';
+import type { UserRole } from '../lib/types';
 
-export default function PortalShell({ children }: { children: ReactNode }) {
+export default function PortalShell({
+  children,
+  allowedRoles,
+}: {
+  children: ReactNode;
+  allowedRoles?: UserRole[];
+}) {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute allowedRoles={allowedRoles}>
       <div className="flex min-h-screen flex-col bg-slate-50">
         <Navbar />
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 lg:px-8">

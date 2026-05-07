@@ -176,4 +176,41 @@ export const api = {
       token,
     });
   },
+
+  async updateRequestStatus(
+    id: number,
+    payload: { new_status: string; comment?: string | null },
+    token?: string,
+  ): Promise<ServiceRequest> {
+    return request<ServiceRequest>(`/requests/${id}/status`, {
+      method: 'PATCH',
+      body: payload,
+      token,
+    });
+  },
+
+  async addInternalNote(
+    id: number,
+    note: string,
+    token?: string,
+  ): Promise<{ status: string }> {
+    return request<{ status: string }>(`/requests/${id}/notes`, {
+      method: 'POST',
+      body: { note },
+      token,
+    });
+  },
+
+  async dashboardSummary(token?: string): Promise<{
+    total_requests: number;
+    submitted_requests: number;
+    in_progress_requests: number;
+    resolved_requests: number;
+  }> {
+    return request('/dashboard/summary', { token });
+  },
+
+  async listServicesAll(token?: string): Promise<ServiceItem[]> {
+    return request<ServiceItem[]>('/services', { token });
+  },
 };

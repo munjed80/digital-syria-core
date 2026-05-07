@@ -2,12 +2,47 @@
 
 Production-oriented MVP foundation for a unified citizen services pilot in Syria.
 
+## Project Vision
+
+This repository is the **first real MVP foundation** for a unified digital
+government core for Syria. The goal is not scattered ministry applications,
+but **shared national digital infrastructure** built around a unified citizen
+portal, an auditable government workflow engine, RBAC, and an interoperable
+versioned API.
+
+Read the vision documents before contributing:
+
+- [`docs/vision/PROJECT_VISION.md`](docs/vision/PROJECT_VISION.md) — what this
+  project is, what it becomes, and what it is not.
+- [`docs/vision/IMPLEMENTATION_PRINCIPLES.md`](docs/vision/IMPLEMENTATION_PRINCIPLES.md)
+  — the rules every change must follow (backend-as-source-of-truth, RBAC,
+  audit, interoperability, language discipline, security defaults).
+- [`docs/vision/MVP_BOUNDARIES.md`](docs/vision/MVP_BOUNDARIES.md) — what is
+  in scope today and what is explicitly a future phase.
+
+### Current MVP status
+
+- **Backend foundation:** implemented (FastAPI + SQLAlchemy + Alembic, JWT
+  auth, RBAC, services catalog, requests workflow, audit logs, in-app
+  notifications, dashboard summary).
+- **Citizen portal:** implemented (Next.js, formal Arabic, RTL).
+- **Employee portal:** in progress — an MVP `/employee/requests` page exists
+  for listing, opening, status changes, and internal notes.
+- **Supervisor portal:** in progress — uses the dashboard summary endpoint;
+  a dedicated UI is not yet built.
+- **Admin portal:** in progress — an MVP `/admin` foundation page exists
+  with high-level counts and a link to audit logs (placeholder).
+- **Real national identity, payment gateway, and ministry integrations** are
+  **future phases** and are explicitly out of scope for this MVP.
+- **Mock data only.** This is **not** a production national system.
+
 ## Repository structure
 
 - `frontend/` Next.js + TypeScript Citizen Portal (Arabic RTL, Tailwind CSS)
 - `backend/` FastAPI + SQLAlchemy + Alembic backend APIs
 - `infra/` Infrastructure placeholders (Nginx reverse proxy)
-- `docs/` Supplemental architecture and API notes
+- `docs/` Supplemental architecture and API notes (see `docs/vision/` for the
+  project vision, implementation principles, and MVP boundaries)
 - `scripts/` Root-level helper scripts
 - `PROJECT_STATUS.md` Current implementation status
 - `AGENTS.md` Contributor/agent collaboration notes
@@ -79,6 +114,8 @@ docker compose exec backend python backend/scripts/seed_data.py
 | `/requests` | "My Requests" table with status filter |
 | `/requests/[id]` | Request detail with status-history timeline |
 | `/profile` | Account info + logout |
+| `/employee/requests` | Employee/supervisor/admin: list requests, open, change status, add internal note |
+| `/admin` | MVP admin foundation: counts and audit-logs link |
 
 Authentication uses a JWT bearer token persisted to `localStorage` and
 mirrored to a `dsc_access_token` cookie so that the Next.js middleware can

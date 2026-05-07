@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 
 const TOKEN_COOKIE = 'dsc_access_token';
 
-const PROTECTED_PREFIXES = ['/dashboard', '/services', '/requests', '/profile'];
+const PROTECTED_PREFIXES = ['/dashboard', '/services', '/requests', '/profile', '/employee', '/admin'];
 const AUTH_PAGES = new Set(['/login', '/register']);
 
 export function middleware(request: NextRequest) {
@@ -37,6 +37,8 @@ export const config = {
     '/services/:path*',
     '/requests/:path*',
     '/profile/:path*',
+    '/employee/:path*',
+    '/admin/:path*',
     '/login',
     '/register',
   ],
