@@ -8,6 +8,7 @@ backend/.env
 frontend/.env.local
 node_modules/
 .next/
+*.tsbuildinfo
 coverage.xml
 htmlcov/
 *.db
