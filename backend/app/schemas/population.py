@@ -51,6 +51,15 @@ class NeighborhoodPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AdminScopesPublic(BaseModel):
+    """Bundle of all administrative-scope reference data."""
+
+    governorates: list[GovernoratePublic] = []
+    municipalities: list[MunicipalityPublic] = []
+    districts: list[DistrictPublic] = []
+    neighborhoods: list[NeighborhoodPublic] = []
+
+
 # ---------------------------------------------------------------------------
 # Person
 # ---------------------------------------------------------------------------

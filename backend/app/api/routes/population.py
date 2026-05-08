@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_roles
 from app.db.session import get_db
-from app.models.admin_scope import Governorate, Municipality
+from app.models.admin_scope import District, Governorate, Municipality, Neighborhood
 from app.models.notification import Notification
 from app.models.population import (
     ChangeRequestStatus,
@@ -35,15 +35,21 @@ from app.models.population import (
 from app.models.user import User, UserRole
 from app.schemas.population import (
     AdministrativeBreakdownItem,
+    AdminScopesPublic,
     AgeGroupBreakdown,
     ChangeRequestCreate,
     ChangeRequestDecision,
     ChangeRequestPublic,
+    DistrictPublic,
     GenderBreakdown,
+    GovernoratePublic,
     HouseholdCreate,
     HouseholdDetail,
     HouseholdPublic,
     HouseholdUpdate,
+    MunicipalityPublic,
+    NeighborhoodPublic,
+    PersonBase,
     PersonCreate,
     PersonPublic,
     PopulationStatistics,
@@ -60,6 +66,33 @@ from app.services.population_rbac import (
 )
 
 router = APIRouter(prefix="/population", tags=["population"])
+
+
+# ---------------------------------------------------------------------------
+# Administrative scopes
+# ---------------------------------------------------------------------------
+
+
+@router.get("/admin-scopes", response_model=AdminScopesPublic)
+def list_admin_scopes(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> AdminScopesPublic:
+    """Return the full administrative-scope reference tree.
+
+    Available to any authenticated user — these are reference values used
+    for selectors in the citizen / employee UIs.
+    """
+    governorates = list(db.scalars(select(Governorate).order_by(Governorate.id)))
+    municipalities = list(db.scalars(select(Municipality).order_by(Municipality.id)))
+    districts = list(db.scalars(select(District).order_by(District.id)))
+    neighborhoods = list(db.scalars(select(Neighborhood).order_by(Neighborhood.id)))
+    return AdminScopesPublic(
+        governorates=[GovernoratePublic.model_validate(g) for g in governorates],
+        municipalities=[MunicipalityPublic.model_validate(m) for m in municipalities],
+        districts=[DistrictPublic.model_validate(d) for d in districts],
+        neighborhoods=[NeighborhoodPublic.model_validate(n) for n in neighborhoods],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +169,14 @@ def create_household(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> Household:
-    if current_user.role not in DIRECT_REGISTRY_WRITE_ROLES:
+    # Per Phase-1 spec: admin, super_admin, mukhtar, household_head — plus
+    # governor / municipality_chief, who already had this capability and are
+    # retained for backwards compatibility.
+    allowed_creators = DIRECT_REGISTRY_WRITE_ROLES | {
+        UserRole.mukhtar,
+        UserRole.household_head,
+    }
+    if current_user.role not in allowed_creators:
         raise HTTPException(status_code=403, detail="Insufficient role permissions")
 
     # Scope guard: governor / municipality_chief may only create within their scope.
@@ -146,6 +186,12 @@ def create_household(
     if current_user.role == UserRole.municipality_chief:
         if payload.municipality_id != current_user.municipality_id:
             raise HTTPException(status_code=403, detail="Out of municipality scope")
+
+    # household_head may only create their own household — head_user_id is
+    # forced to current_user.id regardless of payload.
+    head_user_id = payload.head_user_id
+    if current_user.role == UserRole.household_head:
+        head_user_id = current_user.id
 
     if db.scalar(select(Household).where(Household.code == payload.code)):
         raise HTTPException(status_code=400, detail="Household code already exists")
@@ -158,7 +204,7 @@ def create_household(
         district_id=payload.district_id,
         neighborhood_id=payload.neighborhood_id,
         assigned_mukhtar_user_id=payload.assigned_mukhtar_user_id,
-        head_user_id=payload.head_user_id,
+        head_user_id=head_user_id,
         verification_status=HouseholdVerificationStatus.pending,
     )
     db.add(household)
@@ -292,29 +338,87 @@ def create_person(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> Person:
-    # Citizens / household_head users may NOT create person records directly.
+    # Citizens / household_head users may NOT use the flat endpoint — they
+    # must use the nested /households/{id}/persons endpoint or submit a
+    # change request. This endpoint is reserved for direct administrative use.
     if current_user.role not in DIRECT_REGISTRY_WRITE_ROLES:
         raise HTTPException(
             status_code=403,
             detail="Direct creation requires submitting a change request",
         )
-    household = _get_household_or_404(db, payload.household_id)
+    return _create_person_for_household(
+        db=db,
+        current_user=current_user,
+        household_id=payload.household_id,
+        person_data=payload,
+        skip_role_check=True,
+    )
+
+
+@router.post(
+    "/households/{household_id}/persons",
+    response_model=PersonPublic,
+    status_code=201,
+)
+def create_person_in_household(
+    household_id: int,
+    payload: PersonBase,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> Person:
+    """Add a person to a specific household.
+
+    Allowed roles: super_admin, admin, mukhtar, household_head — and the
+    household must be visible to the current user under the standard scoping
+    rules.
+    """
+    return _create_person_for_household(
+        db=db,
+        current_user=current_user,
+        household_id=household_id,
+        person_data=payload,
+    )
+
+
+# Roles allowed to add a person via the nested /households/{id}/persons route.
+PERSON_ADD_ROLES = {
+    UserRole.super_admin,
+    UserRole.admin,
+    UserRole.mukhtar,
+    UserRole.household_head,
+}
+
+
+def _create_person_for_household(
+    *,
+    db: Session,
+    current_user: User,
+    household_id: int,
+    person_data: PersonBase,
+    skip_role_check: bool = False,
+) -> Person:
+    if not skip_role_check and current_user.role not in PERSON_ADD_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="Insufficient role permissions",
+        )
+    household = _get_household_or_404(db, household_id)
     _ensure_visible(current_user, household)
 
     person = Person(
-        household_id=payload.household_id,
-        full_name=payload.full_name,
-        birth_date=payload.birth_date,
-        gender=payload.gender,
-        relation_to_head=payload.relation_to_head,
-        national_id=payload.national_id,
-        digital_identity_ref=payload.digital_identity_ref,
+        household_id=household.id,
+        full_name=person_data.full_name,
+        birth_date=person_data.birth_date,
+        gender=person_data.gender,
+        relation_to_head=person_data.relation_to_head,
+        national_id=person_data.national_id,
+        digital_identity_ref=person_data.digital_identity_ref,
     )
     db.add(person)
     db.flush()
 
     # Auto-link a head if the household has none and this person is the self.
-    if household.head_person_id is None and payload.relation_to_head == RelationToHead.self:
+    if household.head_person_id is None and person_data.relation_to_head == RelationToHead.self:
         household.head_person_id = person.id
 
     write_audit_log(

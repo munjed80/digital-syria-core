@@ -179,7 +179,13 @@ def seed_population(db: Session) -> None:
             gender=Gender.female,
             relation_to_head=RelationToHead.spouse,
         )
-        db.add_all([head_person, spouse])
+        child = Person(
+            household_id=household.id,
+            full_name="ابن رب الأسرة التجريبي",
+            gender=Gender.male,
+            relation_to_head=RelationToHead.child,
+        )
+        db.add_all([head_person, spouse, child])
         db.flush()
         household.head_person_id = head_person.id
 
