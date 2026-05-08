@@ -5,12 +5,36 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { useAuth } from '../lib/auth-context';
+import type { UserRole } from '../lib/types';
 
-const NAV_ITEMS = [
+interface NavItem {
+  href: string;
+  label: string;
+  roles?: UserRole[];
+}
+
+const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'الرئيسية' },
   { href: '/requests', label: 'طلباتي' },
   { href: '/services', label: 'كتالوج الخدمات' },
   { href: '/profile', label: 'الملف الشخصي' },
+  {
+    href: '/profile/family',
+    label: 'ملف الأسرة',
+    roles: ['citizen', 'household_head'],
+  },
+  {
+    href: '/admin/population',
+    label: 'السجل السكاني الوطني',
+    roles: ['admin', 'super_admin'],
+  },
+  { href: '/governor', label: 'لوحة المحافظ', roles: ['governor', 'super_admin', 'admin'] },
+  {
+    href: '/municipality',
+    label: 'لوحة البلدية',
+    roles: ['municipality_chief', 'governor', 'super_admin', 'admin'],
+  },
+  { href: '/mukhtar', label: 'صفحة المختار', roles: ['mukhtar', 'super_admin', 'admin'] },
 ];
 
 export default function Navbar() {
@@ -23,6 +47,10 @@ export default function Navbar() {
     logout();
     router.push('/login');
   };
+
+  const visibleItems = NAV_ITEMS.filter(
+    (item) => !item.roles || (user && item.roles.includes(user.role)),
+  );
 
   return (
     <header className="border-b border-slate-200 bg-white shadow-sm">
@@ -37,7 +65,7 @@ export default function Navbar() {
         </div>
 
         <nav className="hidden items-center gap-1 md:flex">
-          {NAV_ITEMS.map((item) => {
+          {visibleItems.map((item) => {
             const isActive =
               pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
@@ -89,7 +117,7 @@ export default function Navbar() {
       {open && (
         <div className="border-t border-slate-200 bg-white md:hidden">
           <nav className="space-y-1 px-4 py-3">
-            {NAV_ITEMS.map((item) => {
+            {visibleItems.map((item) => {
               const isActive =
                 pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
