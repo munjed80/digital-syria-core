@@ -6,6 +6,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   // Frontend role gating is a UX convenience; backend RBAC remains the source
   // of truth. Admin-only endpoints (e.g. audit logs) are enforced server-side.
   return (
-    <PortalShell allowedRoles={['admin']}>{children}</PortalShell>
+    <PortalShell allowedRoles={['admin', 'super_admin']}>{children}</PortalShell>
   );
 }

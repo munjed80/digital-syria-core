@@ -1,4 +1,12 @@
-from app.models import audit, notification, request, service, user  # noqa: F401
+from app.models import (  # noqa: F401
+    admin_scope,
+    audit,
+    notification,
+    population,
+    request,
+    service,
+    user,
+)
 from app.models.base import Base
 
 __all__ = ["Base"]

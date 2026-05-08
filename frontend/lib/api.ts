@@ -1,4 +1,9 @@
 import type {
+  ChangeRequestType,
+  Household,
+  HouseholdDetail,
+  PopulationChangeRequest,
+  PopulationStatistics,
   ServiceItem,
   ServiceRequest,
   ServiceRequestDetail,
@@ -212,5 +217,93 @@ export const api = {
 
   async listServicesAll(token?: string): Promise<ServiceItem[]> {
     return request<ServiceItem[]>('/services', { token });
+  },
+
+  // -------------------------------------------------------------------------
+  // Population Registry
+  // -------------------------------------------------------------------------
+
+  async listHouseholds(
+    params: { verification_status?: string } = {},
+    token?: string,
+  ): Promise<Household[]> {
+    const qs = new URLSearchParams();
+    if (params.verification_status) {
+      qs.set('verification_status', params.verification_status);
+    }
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return request<Household[]>(`/population/households${suffix}`, { token });
+  },
+
+  async getHousehold(id: number, token?: string): Promise<HouseholdDetail> {
+    return request<HouseholdDetail>(`/population/households/${id}`, { token });
+  },
+
+  async updateHouseholdVerification(
+    id: number,
+    verification_status: 'verified' | 'rejected' | 'pending',
+    token?: string,
+  ): Promise<Household> {
+    return request<Household>(`/population/households/${id}`, {
+      method: 'PATCH',
+      body: { verification_status },
+      token,
+    });
+  },
+
+  async listChangeRequests(
+    params: { status?: string } = {},
+    token?: string,
+  ): Promise<PopulationChangeRequest[]> {
+    const qs = new URLSearchParams();
+    if (params.status) qs.set('status', params.status);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return request<PopulationChangeRequest[]>(
+      `/population/change-requests${suffix}`,
+      { token },
+    );
+  },
+
+  async submitChangeRequest(
+    payload: {
+      request_type: ChangeRequestType;
+      household_id: number;
+      target_person_id?: number | null;
+      payload?: Record<string, unknown>;
+      reason?: string | null;
+    },
+    token?: string,
+  ): Promise<PopulationChangeRequest> {
+    return request<PopulationChangeRequest>('/population/change-requests', {
+      method: 'POST',
+      body: payload,
+      token,
+    });
+  },
+
+  async mukhtarDecision(
+    id: number,
+    payload: { approve: boolean; comment?: string | null },
+    token?: string,
+  ): Promise<PopulationChangeRequest> {
+    return request<PopulationChangeRequest>(
+      `/population/change-requests/${id}/mukhtar-decision`,
+      { method: 'POST', body: payload, token },
+    );
+  },
+
+  async municipalityDecision(
+    id: number,
+    payload: { approve: boolean; comment?: string | null },
+    token?: string,
+  ): Promise<PopulationChangeRequest> {
+    return request<PopulationChangeRequest>(
+      `/population/change-requests/${id}/municipality-decision`,
+      { method: 'POST', body: payload, token },
+    );
+  },
+
+  async populationStatistics(token?: string): Promise<PopulationStatistics> {
+    return request<PopulationStatistics>('/population/statistics', { token });
   },
 };
