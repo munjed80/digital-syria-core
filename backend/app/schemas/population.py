@@ -142,8 +142,13 @@ class ChangeRequestCreate(BaseModel):
     request_type: ChangeRequestType
     household_id: int
     target_person_id: int | None = None
+    # Phase-2 alias — accept either name on input.
+    person_id: int | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
     reason: str | None = None
+
+    def resolved_person_id(self) -> int | None:
+        return self.person_id if self.person_id is not None else self.target_person_id
 
 
 class ChangeRequestDecision(BaseModel):
@@ -153,6 +158,7 @@ class ChangeRequestDecision(BaseModel):
 
 class ChangeRequestPublic(BaseModel):
     id: int
+    request_number: str | None = None
     request_type: ChangeRequestType
     status: ChangeRequestStatus
     submitted_by_user_id: int
@@ -160,6 +166,15 @@ class ChangeRequestPublic(BaseModel):
     target_person_id: int | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
     reason: str | None = None
+    # Unified Phase-2 review/approve fields.
+    reviewed_by_user_id: int | None = None
+    reviewed_at: datetime | None = None
+    review_notes: str | None = None
+    approved_by_user_id: int | None = None
+    approved_at: datetime | None = None
+    rejection_reason: str | None = None
+    # Legacy review fields (kept for backwards compatibility with the
+    # Phase-1 mukhtar/municipality two-step workflow).
     mukhtar_user_id: int | None = None
     mukhtar_decision_at: datetime | None = None
     mukhtar_comment: str | None = None
@@ -169,6 +184,54 @@ class ChangeRequestPublic(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
+# Phase-2 unified change-request schemas
+# ---------------------------------------------------------------------------
+
+
+class PopulationChangeRequestCreate(BaseModel):
+    """Payload accepted by `POST /population/change-requests`."""
+
+    request_type: ChangeRequestType
+    household_id: int
+    person_id: int | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    reason: str | None = None
+
+
+class PopulationChangeRequestUpdate(BaseModel):
+    """Allowed mutations on a non-finalised request by its owner."""
+
+    payload: dict[str, Any] | None = None
+    reason: str | None = None
+
+
+class PopulationChangeRequestReview(BaseModel):
+    """Reviewer action — `under_review`, `rejected`, or `approved`.
+
+    `action` controls the resulting status:
+        * `start`     → status = under_review
+        * `approve`   → status = approved (applies the change)
+        * `reject`    → status = rejected (requires `rejection_reason`)
+    """
+
+    action: str = Field(pattern=r"^(start|approve|reject)$")
+    review_notes: str | None = None
+    rejection_reason: str | None = None
+
+
+class PopulationChangeRequestApprove(BaseModel):
+    """Final approval payload for `POST /change-requests/{id}/approve`."""
+
+    review_notes: str | None = None
+
+
+class PopulationChangeRequestRead(ChangeRequestPublic):
+    """Alias for the Phase-2 spec naming — same shape as ChangeRequestPublic."""
+
+    pass
 
 
 # ---------------------------------------------------------------------------

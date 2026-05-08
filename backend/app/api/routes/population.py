@@ -52,10 +52,15 @@ from app.schemas.population import (
     PersonBase,
     PersonCreate,
     PersonPublic,
+    PopulationChangeRequestApprove,
+    PopulationChangeRequestCreate,
+    PopulationChangeRequestRead,
+    PopulationChangeRequestReview,
     PopulationStatistics,
     StatusBreakdown,
 )
 from app.services.audit import write_audit_log
+from app.services import population_change_requests as _pcr_service
 from app.services.population_rbac import (
     DIRECT_REGISTRY_WRITE_ROLES,
     HIGH_RISK_CHANGE_TYPES,
@@ -446,7 +451,12 @@ def _create_person_for_household(
 # ---------------------------------------------------------------------------
 
 
-def _allowed_submitters() -> set[UserRole]:
+def _allowed_submitters() -> set[UserRole]:  # pragma: no cover - retained for API compat
+    """Roles that may submit a change request (Phase-1 listing).
+
+    Kept for external imports/back-compat; the Phase-2 service layer uses
+    `app.services.population_change_requests.SUBMITTER_ROLES`.
+    """
     return {
         UserRole.citizen,
         UserRole.household_head,
@@ -464,60 +474,20 @@ def submit_change_request(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> PopulationChangeRequest:
-    if current_user.role not in _allowed_submitters():
-        raise HTTPException(status_code=403, detail="Insufficient role permissions")
-
-    household = _get_household_or_404(db, payload.household_id)
-
-    # Citizens & household_head may only submit for households they own.
-    if current_user.role in {UserRole.citizen, UserRole.household_head}:
-        if household.head_user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="You may only submit requests for your own household")
-
-    if payload.target_person_id is not None:
-        person = db.scalar(select(Person).where(Person.id == payload.target_person_id))
-        if person is None or person.household_id != household.id:
-            raise HTTPException(status_code=400, detail="Target person does not belong to household")
-
-    cr = PopulationChangeRequest(
+    # The Phase-1 wire contract uses `mukhtar_review` as the initial status
+    # so the existing /mukhtar-decision flow continues to work; the unified
+    # Phase-2 endpoints (/review, /approve, /cancel) treat mukhtar_review
+    # as a sub-state of under_review.
+    cr = _pcr_service.create_change_request(
+        db,
+        current_user=current_user,
         request_type=payload.request_type,
-        status=ChangeRequestStatus.mukhtar_review,
-        submitted_by_user_id=current_user.id,
-        household_id=household.id,
-        target_person_id=payload.target_person_id,
+        household_id=payload.household_id,
+        person_id=payload.resolved_person_id(),
         payload=payload.payload,
         reason=payload.reason,
+        initial_status=ChangeRequestStatus.mukhtar_review,
     )
-    db.add(cr)
-    db.flush()
-
-    write_audit_log(
-        db,
-        actor_user_id=current_user.id,
-        action="population.change_request.submit",
-        entity_type="population_change_request",
-        entity_id=str(cr.id),
-        metadata={"type": cr.request_type.value, "household_id": household.id},
-    )
-    _log_event(
-        db,
-        event_type="change_request.submitted",
-        actor_user_id=current_user.id,
-        household_id=household.id,
-        person_id=payload.target_person_id,
-        change_request_id=cr.id,
-        payload={"type": cr.request_type.value},
-    )
-
-    # Notify the assigned mukhtar (if any).
-    if household.assigned_mukhtar_user_id is not None:
-        db.add(
-            Notification(
-                user_id=household.assigned_mukhtar_user_id,
-                message=f"طلب تغيير سكاني جديد رقم {cr.id} بانتظار المراجعة",
-            )
-        )
-
     db.commit()
     db.refresh(cr)
     return cr
@@ -773,6 +743,91 @@ def municipality_decision(
             user_id=cr.submitted_by_user_id,
             message=f"تم تحديث حالة طلب التغيير رقم {cr.id} إلى {cr.status.value}",
         )
+    )
+    db.commit()
+    db.refresh(cr)
+    return cr
+
+
+# ---------------------------------------------------------------------------
+# Phase-2 unified change-request endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/change-requests/{request_id}", response_model=PopulationChangeRequestRead)
+def get_change_request(
+    request_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> PopulationChangeRequest:
+    cr = db.scalar(
+        select(PopulationChangeRequest).where(PopulationChangeRequest.id == request_id)
+    )
+    if cr is None:
+        raise HTTPException(status_code=404, detail="Change request not found")
+    if not _pcr_service.request_visible_to(db, current_user, cr):
+        # Mask as 404 to avoid leaking existence.
+        raise HTTPException(status_code=404, detail="Change request not found")
+    return cr
+
+
+@router.patch(
+    "/change-requests/{request_id}/review",
+    response_model=PopulationChangeRequestRead,
+)
+def review_change_request_endpoint(
+    request_id: int,
+    payload: PopulationChangeRequestReview,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> PopulationChangeRequest:
+    cr = _pcr_service.review_change_request(
+        db,
+        request_id=request_id,
+        current_user=current_user,
+        action=payload.action,
+        review_notes=payload.review_notes,
+        rejection_reason=payload.rejection_reason,
+    )
+    db.commit()
+    db.refresh(cr)
+    return cr
+
+
+@router.post(
+    "/change-requests/{request_id}/approve",
+    response_model=PopulationChangeRequestRead,
+)
+def approve_change_request_endpoint(
+    request_id: int,
+    payload: PopulationChangeRequestApprove,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> PopulationChangeRequest:
+    cr = _pcr_service.approve_change_request(
+        db,
+        request_id=request_id,
+        current_user=current_user,
+        review_notes=payload.review_notes,
+    )
+    db.commit()
+    db.refresh(cr)
+    return cr
+
+
+@router.post(
+    "/change-requests/{request_id}/cancel",
+    response_model=PopulationChangeRequestRead,
+)
+def cancel_change_request_endpoint(
+    request_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> PopulationChangeRequest:
+    cr = _pcr_service.cancel_change_request(
+        db,
+        request_id=request_id,
+        current_user=current_user,
     )
     db.commit()
     db.refresh(cr)
