@@ -50,14 +50,24 @@ class ChangeRequestType(str, Enum):
     correction = "correction"
     add_member = "add_member"
     remove_member = "remove_member"
+    # Phase-2 addition: move a person from one household to another.
+    move_member = "move_member"
 
 
 class ChangeRequestStatus(str, Enum):
+    # Phase-2 statuses (canonical workflow).
+    draft = "draft"
     submitted = "submitted"
-    mukhtar_review = "mukhtar_review"
-    municipality_review = "municipality_review"
+    under_review = "under_review"
     approved = "approved"
     rejected = "rejected"
+    cancelled = "cancelled"
+    # Legacy statuses from Phase-1 workflow, kept for backwards compatibility
+    # with existing data and existing `/mukhtar-decision` / `/municipality-decision`
+    # endpoints. These are treated as sub-states of `under_review` by the new
+    # service layer.
+    mukhtar_review = "mukhtar_review"
+    municipality_review = "municipality_review"
 
 
 class Household(Base, TimestampMixin):
@@ -135,6 +145,11 @@ class PopulationChangeRequest(Base, TimestampMixin):
     __tablename__ = "population_change_requests"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    # Human-friendly tracking number (e.g. `CR-2026-000123`). Nullable to
+    # accommodate rows created prior to Phase-2.
+    request_number: Mapped[str | None] = mapped_column(
+        String(32), unique=True, nullable=True, index=True
+    )
     request_type: Mapped[ChangeRequestType] = mapped_column(
         SQLEnum(ChangeRequestType), nullable=False, index=True
     )
@@ -159,6 +174,23 @@ class PopulationChangeRequest(Base, TimestampMixin):
     payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # ---- Phase-2 unified review/approve fields --------------------------------
+    reviewed_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ---- Legacy Phase-1 review fields (kept for compatibility) ----------------
     mukhtar_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
@@ -174,6 +206,16 @@ class PopulationChangeRequest(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
     municipality_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Convenience alias: spec calls the field `person_id`; existing code uses
+    # `target_person_id`. Keep both names as the same logical column.
+    @property
+    def person_id(self) -> int | None:
+        return self.target_person_id
+
+    @person_id.setter
+    def person_id(self, value: int | None) -> None:
+        self.target_person_id = value
 
 
 class PopulationEventLog(Base):
