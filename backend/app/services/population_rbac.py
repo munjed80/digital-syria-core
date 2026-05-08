@@ -89,10 +89,16 @@ def apply_household_scope(query: Select, user: User) -> Select:
     role = user.role
     if is_national_role(role):
         return query
+    # Non-existent id used to produce zero rows when scope is incomplete.
+    EMPTY_SCOPE = -1
     if role == UserRole.governor:
-        return query.where(Household.governorate_id == (user.governorate_id or -1))
+        if user.governorate_id is None:
+            return query.where(Household.id == EMPTY_SCOPE)
+        return query.where(Household.governorate_id == user.governorate_id)
     if role == UserRole.municipality_chief:
-        return query.where(Household.municipality_id == (user.municipality_id or -1))
+        if user.municipality_id is None:
+            return query.where(Household.id == EMPTY_SCOPE)
+        return query.where(Household.municipality_id == user.municipality_id)
     if role == UserRole.mukhtar:
         clauses = [Household.assigned_mukhtar_user_id == user.id]
         if user.neighborhood_id is not None:
@@ -103,7 +109,7 @@ def apply_household_scope(query: Select, user: User) -> Select:
     if role == UserRole.household_head:
         return query.where(Household.head_user_id == user.id)
     # Any other role: explicitly produce zero rows.
-    return query.where(Household.id == -1)
+    return query.where(Household.id == EMPTY_SCOPE)
 
 
 # Change-request types that are considered higher-risk and therefore

@@ -458,12 +458,24 @@ def _apply_change_to_registry(
     payload = cr.payload or {}
 
     if rt == ChangeRequestType.birth or rt == ChangeRequestType.add_member:
+        full_name = (payload.get("full_name") or "").strip()
+        if not full_name:
+            # Reject the change at apply-time rather than silently storing a
+            # placeholder. The reviewer should re-submit with a valid payload.
+            raise HTTPException(
+                status_code=400,
+                detail="Change request payload must include a non-empty full_name",
+            )
         gender_raw = payload.get("gender", "male")
         try:
             gender = Gender(gender_raw)
         except ValueError:
             gender = Gender.male
-        relation_raw = payload.get("relation_to_head", "child" if rt == ChangeRequestType.birth else "other")
+        if rt == ChangeRequestType.birth:
+            default_relation = "child"
+        else:
+            default_relation = "other"
+        relation_raw = payload.get("relation_to_head", default_relation)
         try:
             relation = RelationToHead(relation_raw)
         except ValueError:
@@ -477,7 +489,7 @@ def _apply_change_to_registry(
                 birth_value = None
         person = Person(
             household_id=household.id,
-            full_name=payload.get("full_name", "غير محدد"),
+            full_name=full_name,
             birth_date=birth_value,
             gender=gender,
             relation_to_head=relation,
